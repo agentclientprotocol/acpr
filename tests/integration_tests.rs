@@ -154,7 +154,7 @@ async fn test_agent_sacp_integration(agent_name: &str) -> Result<(), Box<dyn std
         .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("off"))
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("off")),
         )
         .try_init();
 
@@ -233,8 +233,8 @@ async fn test_uvx_agent_basic() {
     }
 
     use acpr::Acpr;
-    use tokio::io;
     use std::time::Duration;
+    use tokio::io;
 
     // Test with fast-agent uvx agent - just verify it starts and closes cleanly
     let agent = Acpr::new("fast-agent");
@@ -246,7 +246,8 @@ async fn test_uvx_agent_basic() {
         // Just start the agent and let it close when stdin closes
         drop(stdin_read); // Close stdin immediately
         agent.run_with_streams(io::empty(), stdout_write).await
-    }).await;
+    })
+    .await;
 
     match result {
         Ok(Ok(())) => {
