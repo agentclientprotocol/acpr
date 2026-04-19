@@ -12,7 +12,12 @@ pub async fn run_agent(agent: &Agent, cache_dir: &PathBuf, force: Option<&ForceO
         info!("Executing npx package: {}", npx.package);
         let mut cmd = Command::new("npx");
         cmd.arg("-y");
-        cmd.arg(format!("{}@latest", npx.package));
+        let package_arg = if npx.package.contains('@') && npx.package.matches('@').count() > 1 {
+            npx.package.clone()
+        } else {
+            format!("{}@latest", npx.package)
+        };
+        cmd.arg(package_arg);
         cmd.args(&npx.args);
         cmd.stdin(Stdio::inherit()).stdout(Stdio::inherit()).stderr(Stdio::inherit());
         cmd.status().await?;
