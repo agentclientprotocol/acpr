@@ -1,0 +1,32 @@
+{
+  "version": "1.0.0",
+  "agents": [
+    {
+      "id": "test-npx-agent",
+      "name": "Test NPX Agent",
+      "version": "1.0.0",
+      "description": "Test agent using npx",
+      "distribution": {
+        "npx": {
+          "package": "cowsay",
+          "args": ["hello world"]
+        }
+      }
+    },
+    {
+      "id": "test-binary-agent",
+      "name": "Test Binary Agent", 
+      "version": "1.0.0",
+      "description": "Test agent using binary",
+      "distribution": {
+        "binary": {
+          "darwin-aarch64": {
+            "archive": "https://httpbin.org/base64/aGVsbG8gd29ybGQ=",
+            "cmd": "./test-binary",
+            "args": []
+          }
+        }
+      }
+    }
+  ]
+}
