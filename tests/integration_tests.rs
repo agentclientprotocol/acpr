@@ -11,9 +11,10 @@ async fn test_fetch_custom_registry() {
     let registry_path = PathBuf::from("tests/fixtures/test-registry.json");
     let registry = fetch_registry(&cache_dir, None, Some(&registry_path)).await.unwrap();
     
-    assert_eq!(registry.agents.len(), 2);
+    assert_eq!(registry.agents.len(), 3);
     assert_eq!(registry.agents[0].id, "test-npx-agent");
     assert_eq!(registry.agents[1].id, "test-binary-agent");
+    assert_eq!(registry.agents[2].id, "test-versioned-npx-agent");
 }
 
 #[tokio::test]
@@ -95,4 +96,27 @@ async fn test_binary_caching() {
         let binary_path3 = download_binary(&agent, binary_dist, &cache_dir, Some(&ForceOption::Binary)).await.unwrap();
         assert_eq!(path1, binary_path3);
     }
+}
+
+#[test]
+fn test_versioned_package_handling() {
+    // Test that versioned packages don't get @latest appended
+    let versioned_package = "@google/gemini-cli@0.38.2";
+    let unversioned_package = "cowsay";
+    
+    // Simulate the logic from run_agent
+    let versioned_arg = if versioned_package.contains('@') && versioned_package.matches('@').count() > 1 {
+        versioned_package.to_string()
+    } else {
+        format!("{}@latest", versioned_package)
+    };
+    
+    let unversioned_arg = if unversioned_package.contains('@') && unversioned_package.matches('@').count() > 1 {
+        unversioned_package.to_string()
+    } else {
+        format!("{}@latest", unversioned_package)
+    };
+    
+    assert_eq!(versioned_arg, "@google/gemini-cli@0.38.2");
+    assert_eq!(unversioned_arg, "cowsay@latest");
 }

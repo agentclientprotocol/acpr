@@ -27,6 +27,18 @@
           }
         }
       }
+    },
+    {
+      "id": "test-versioned-npx-agent",
+      "name": "Test Versioned NPX Agent",
+      "version": "1.0.0", 
+      "description": "Test agent using npx with versioned package",
+      "distribution": {
+        "npx": {
+          "package": "@google/gemini-cli@0.38.2",
+          "args": []
+        }
+      }
     }
   ]
 }
