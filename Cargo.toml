@@ -2,6 +2,13 @@
 name = "acpr"
 version = "0.1.0"
 edition = "2024"
+description = "Run agents from the ACP registry"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/nikomat/acpr"
+homepage = "https://github.com/nikomat/acpr"
+documentation = "https://docs.rs/acpr"
+keywords = ["acp", "agent", "cli", "registry"]
+categories = ["command-line-utilities"]
 
 [package.metadata]
 
