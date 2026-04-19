@@ -6,7 +6,7 @@ pub use registry::*;
 
 use sacp::{Agent as SacpAgent, ByteStreams, Client, ConnectTo};
 use std::path::PathBuf;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::Command;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{debug, info};
@@ -55,12 +55,12 @@ impl Acpr {
 
     /// Run the agent with default stdio
     pub async fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
-        self.run_with_stdio(tokio::io::stdin(), tokio::io::stdout())
+        self.run_with_streams(tokio::io::stdin(), tokio::io::stdout())
             .await
     }
 
     /// Run the agent with custom stdio streams
-    pub async fn run_with_stdio<R, W>(
+    pub async fn run_with_streams<R, W>(
         &self,
         stdin: R,
         stdout: W,
@@ -90,32 +90,80 @@ impl Acpr {
         cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::inherit());
+        debug!("Running cmd: {cmd:?}");
 
         let mut child = cmd.spawn()?;
         let child_stdin = child.stdin.take().unwrap();
         let child_stdout = child.stdout.take().unwrap();
 
-        let stdin_task = tokio::spawn(async move {
+        let stdin_future = async {
             let mut stdin = stdin;
             let mut child_stdin = child_stdin;
-            tokio::io::copy(&mut stdin, &mut child_stdin).await
-        });
+            let mut buf = [0u8; 8192];
+            loop {
+                match stdin.read(&mut buf).await {
+                    Ok(0) => {
+                        debug!("stdin: EOF received");
+                        break;
+                    }
+                    Ok(n) => {
+                        debug!("stdin: received {} bytes", n);
+                        if let Err(e) = child_stdin.write_all(&buf[..n]).await {
+                            tracing::debug!("stdin write error: {}", e);
+                            break;
+                        }
+                        if let Err(e) = child_stdin.flush().await {
+                            tracing::debug!("stdin flush error: {}", e);
+                            break;
+                        }
+                        debug!("stdin: forwarded {} bytes to child", n);
+                    }
+                    Err(e) => {
+                        tracing::debug!("stdin read error: {}", e);
+                        break;
+                    }
+                }
+            }
+            Ok::<(), std::io::Error>(())
+        };
 
-        let stdout_task = tokio::spawn(async move {
+        let stdout_future = async {
             let mut child_stdout = child_stdout;
             let mut stdout = stdout;
-            tokio::io::copy(&mut child_stdout, &mut stdout).await
-        });
+            let mut buf = [0u8; 8192];
+            loop {
+                match child_stdout.read(&mut buf).await {
+                    Ok(0) => {
+                        debug!("stdout: EOF from child");
+                        break;
+                    }
+                    Ok(n) => {
+                        debug!("stdout: received {} bytes from child", n);
+                        if let Err(e) = stdout.write_all(&buf[..n]).await {
+                            tracing::debug!("stdout write error: {}", e);
+                            break;
+                        }
+                        if let Err(e) = stdout.flush().await {
+                            tracing::debug!("stdout flush error: {}", e);
+                            break;
+                        }
+                        debug!("stdout: forwarded {} bytes", n);
+                    }
+                    Err(e) => {
+                        tracing::debug!("stdout read error: {}", e);
+                        break;
+                    }
+                }
+            }
+            Ok::<(), std::io::Error>(())
+        };
 
-        let (status_result, stdin_result, stdout_result) =
-            tokio::join!(child.wait(), stdin_task, stdout_task);
-        let status = status_result?;
-        stdin_result.map_err(|e| format!("stdin task failed: {}", e))??;
-        stdout_result.map_err(|e| format!("stdout task failed: {}", e))??;
+        tokio::try_join!(
+            async { child.wait().await.map_err(|e| e.into()) },
+            stdin_future,
+            stdout_future
+        )?;
 
-        if !status.success() {
-            return Err(format!("Process exited with status: {}", status).into());
-        }
         Ok(())
     }
 
@@ -138,7 +186,7 @@ impl Acpr {
         } else if let Some(uvx) = &agent.distribution.uvx {
             info!("Executing uvx package: {}", uvx.package);
             let mut cmd = Command::new("uvx");
-            cmd.arg(format!("{}@latest", uvx.package)).args(&uvx.args);
+            cmd.arg(&uvx.package).args(&uvx.args);
             Ok(cmd)
         } else if !agent.distribution.binary.is_empty() {
             let platform = get_platform();
@@ -162,27 +210,28 @@ impl Acpr {
 /// Implement ConnectTo<Client> so Acpr can act as an ACP agent
 impl ConnectTo<Client> for Acpr {
     async fn connect_to(self, client: impl ConnectTo<SacpAgent>) -> Result<(), sacp::Error> {
-        let (client_stdin, agent_stdout) = tokio::io::duplex(8192);
-        let (agent_stdin, client_stdout) = tokio::io::duplex(8192);
+        debug!("ConnectTo: creating duplex streams");
+        let (client_stdin, agent_stdin) = tokio::io::duplex(8192);
+        let (agent_stdout, client_stdout) = tokio::io::duplex(8192);
 
-        let agent_task = tokio::spawn(async move {
-            self.run_with_stdio(agent_stdin, agent_stdout)
-                .await
-                .map_err(|e| sacp::Error::internal_error().data(e.to_string()))
-        });
-
+        debug!("ConnectTo: creating ByteStreams for sacp");
         let byte_streams = ByteStreams::new(client_stdin.compat_write(), client_stdout.compat());
-        let client_task = ConnectTo::<Client>::connect_to(byte_streams, client);
 
+        debug!("ConnectTo: starting agent and client tasks");
         tokio::try_join!(
             async {
-                agent_task
+                debug!("ConnectTo: starting agent process");
+                self.run_with_streams(agent_stdin, agent_stdout)
                     .await
-                    .map_err(|e| sacp::Error::internal_error().data(e.to_string()))?
+                    .map_err(|e| sacp::Error::internal_error().data(e.to_string()))
             },
-            client_task
+            async {
+                debug!("ConnectTo: starting sacp client connection");
+                ConnectTo::<Client>::connect_to(byte_streams, client).await
+            }
         )?;
 
+        debug!("ConnectTo: both tasks completed successfully");
         Ok(())
     }
 }

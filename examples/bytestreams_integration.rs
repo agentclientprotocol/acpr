@@ -1,5 +1,5 @@
 use acpr::Acpr;
-use sacp::{ByteStreams, Client, ConnectTo};
+use sacp::ByteStreams;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 #[tokio::main]
@@ -11,10 +11,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Created agent: {}", agent.agent_name);
 
     // Example 2: Manual ByteStreams creation (for custom stdio handling)
-    let (stdin_read, stdin_write) = tokio::io::duplex(1024);
-    let (stdout_read, stdout_write) = tokio::io::duplex(1024);
+    let (stdin_read, _stdin_write) = tokio::io::duplex(1024);
+    let (_stdout_read, stdout_write) = tokio::io::duplex(1024);
 
-    let byte_streams = ByteStreams::new(stdout_write.compat_write(), stdin_read.compat());
+    let _byte_streams = ByteStreams::new(stdout_write.compat_write(), stdin_read.compat());
 
     println!("Created ByteStreams from custom stdio");
 

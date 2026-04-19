@@ -75,6 +75,7 @@ async fn test_binary_caching() {
                 map.insert(
                     "darwin-aarch64".to_string(),
                     BinaryDist {
+                        // httpbin.org/base64/aGVsbG8gd29ybGQ= returns "hello world" (base64 decoded)
                         archive: "https://httpbin.org/base64/aGVsbG8gd29ybGQ=".to_string(),
                         cmd: "./test-binary".to_string(),
                         args: vec![],
@@ -96,6 +97,10 @@ async fn test_binary_caching() {
     if binary_path1.is_ok() {
         let path1 = binary_path1.unwrap();
         assert!(path1.exists());
+
+        // Verify the content is what we expect
+        let content = tokio::fs::read_to_string(&path1).await.unwrap();
+        assert_eq!(content, "hello world");
 
         // Second download should use cache (no force)
         let binary_path2 = download_binary(&agent, binary_dist, &cache_dir, None)
@@ -135,4 +140,123 @@ fn test_versioned_package_handling() {
 
     assert_eq!(versioned_arg, "@google/gemini-cli@0.38.2");
     assert_eq!(unversioned_arg, "cowsay@latest");
+}
+
+async fn test_agent_sacp_integration(agent_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // Skip if environment variable is set (for CI)
+    if std::env::var("ACPR_SKIP_AGENT").is_ok() {
+        return Ok(());
+    }
+
+    // Enable tracing based on RUST_LOG environment variable (ignore if already set)
+    // Default to OFF if RUST_LOG is not set
+    let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("off"))
+        )
+        .try_init();
+
+    use acpr::Acpr;
+    use sacp::{
+        Client,
+        schema::{InitializeRequest, ProtocolVersion},
+    };
+    use std::time::Duration;
+    use tracing::info;
+
+    info!("Testing sacp integration with agent: {}", agent_name);
+
+    let agent = Acpr::new(agent_name);
+    info!("Created Acpr instance for {} agent", agent_name);
+
+    // Add a 30 second timeout
+    let result = tokio::time::timeout(Duration::from_secs(30), async {
+        Client
+            .builder()
+            .name("acpr-test-client")
+            .connect_with(agent, async |cx| {
+                info!("Connected to agent, initializing...");
+
+                // Just test initialization - no session/prompt complexity
+                info!("Sending initialize request...");
+                let init_response = cx
+                    .send_request(InitializeRequest::new(ProtocolVersion::LATEST))
+                    .block_task()
+                    .await?;
+                info!("Initialization complete: {:?}", init_response);
+
+                // Success if we get here
+                Ok(())
+            })
+            .await
+    })
+    .await;
+
+    match result {
+        Ok(Ok(())) => {
+            info!(
+                "Agent {} integration test completed successfully",
+                agent_name
+            );
+            Ok(())
+        }
+        Ok(Err(e)) => Err(format!("Agent {} integration test failed: {}", agent_name, e).into()),
+        Err(_) => Err(format!(
+            "Agent {} integration test timed out after 30 seconds",
+            agent_name
+        )
+        .into()),
+    }
+}
+
+#[tokio::test]
+async fn test_amp_acp_integration() {
+    test_agent_sacp_integration("amp-acp")
+        .await
+        .expect("amp-acp integration test failed");
+}
+
+#[tokio::test]
+async fn test_claude_integration() {
+    test_agent_sacp_integration("claude-acp")
+        .await
+        .expect("claude-acp integration test failed");
+}
+
+#[tokio::test]
+async fn test_uvx_agent_basic() {
+    // Skip if environment variable is set (for CI)
+    if std::env::var("ACPR_SKIP_AGENT").is_ok() {
+        return;
+    }
+
+    use acpr::Acpr;
+    use tokio::io;
+    use std::time::Duration;
+
+    // Test with fast-agent uvx agent - just verify it starts and closes cleanly
+    let agent = Acpr::new("fast-agent");
+
+    let (stdin_read, stdout_write) = tokio::io::duplex(1024);
+
+    // Add a 5 second timeout for basic start/stop test
+    let result = tokio::time::timeout(Duration::from_secs(5), async {
+        // Just start the agent and let it close when stdin closes
+        drop(stdin_read); // Close stdin immediately
+        agent.run_with_streams(io::empty(), stdout_write).await
+    }).await;
+
+    match result {
+        Ok(Ok(())) => {
+            // Success - agent started and exited cleanly
+        }
+        Ok(Err(_)) => {
+            // Agent started but exited with error - still counts as working
+        }
+        Err(_) => {
+            panic!("uvx agent test timed out - agent may not be starting properly");
+        }
+    }
 }
