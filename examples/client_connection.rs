@@ -1,5 +1,5 @@
 use acpr::Acpr;
-use sacp::Client;
+use agent_client_protocol::Client;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

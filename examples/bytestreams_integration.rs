@@ -1,5 +1,5 @@
 use acpr::Acpr;
-use sacp::ByteStreams;
+use agent_client_protocol::ByteStreams;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 #[tokio::main]
