@@ -159,7 +159,7 @@ async fn test_agent_sacp_integration(agent_name: &str) -> Result<(), Box<dyn std
         .try_init();
 
     use acpr::Acpr;
-    use sacp::{
+    use agent_client_protocol::{
         Client,
         schema::{InitializeRequest, ProtocolVersion},
     };

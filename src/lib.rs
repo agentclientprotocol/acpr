@@ -4,7 +4,7 @@ pub mod registry;
 pub use cli::*;
 pub use registry::*;
 
-use sacp::{Agent as SacpAgent, ByteStreams, Client, ConnectTo};
+use agent_client_protocol::{Agent as AcpAgent, ByteStreams, Client, ConnectTo};
 use std::path::PathBuf;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::Command;
@@ -209,7 +209,7 @@ impl Acpr {
 
 /// Implement ConnectTo<Client> so Acpr can act as an ACP agent
 impl ConnectTo<Client> for Acpr {
-    async fn connect_to(self, client: impl ConnectTo<SacpAgent>) -> Result<(), sacp::Error> {
+    async fn connect_to(self, client: impl ConnectTo<AcpAgent>) -> Result<(), agent_client_protocol::Error> {
         debug!("ConnectTo: creating duplex streams");
         let (client_stdin, agent_stdin) = tokio::io::duplex(8192);
         let (agent_stdout, client_stdout) = tokio::io::duplex(8192);
@@ -223,7 +223,7 @@ impl ConnectTo<Client> for Acpr {
                 debug!("ConnectTo: starting agent process");
                 self.run_with_streams(agent_stdin, agent_stdout)
                     .await
-                    .map_err(|e| sacp::Error::internal_error().data(e.to_string()))
+                    .map_err(|e| agent_client_protocol::Error::internal_error().data(e.to_string()))
             },
             async {
                 debug!("ConnectTo: starting sacp client connection");

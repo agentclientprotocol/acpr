@@ -1,5 +1,5 @@
 use acpr::{self, Acpr};
-use sacp::{Client, DynConnectTo};
+use agent_client_protocol::{Client, DynConnectTo};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
