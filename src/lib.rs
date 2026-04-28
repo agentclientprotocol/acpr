@@ -209,7 +209,10 @@ impl Acpr {
 
 /// Implement ConnectTo<Client> so Acpr can act as an ACP agent
 impl ConnectTo<Client> for Acpr {
-    async fn connect_to(self, client: impl ConnectTo<AcpAgent>) -> Result<(), agent_client_protocol::Error> {
+    async fn connect_to(
+        self,
+        client: impl ConnectTo<AcpAgent>,
+    ) -> Result<(), agent_client_protocol::Error> {
         debug!("ConnectTo: creating duplex streams");
         let (client_stdin, agent_stdin) = tokio::io::duplex(8192);
         let (agent_stdout, client_stdout) = tokio::io::duplex(8192);
