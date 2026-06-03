@@ -276,9 +276,11 @@ async fn test_command_wrapper_transforms_command() {
     // Use a command wrapper that replaces the agent command with `echo`
     let agent = Acpr::new("claude-acp").with_command_wrapper(|cmd: ResolvedCommand| {
         let mut args = vec![format!("wrapped: {:?} {:?}", cmd.program, cmd.args).into()];
-        args.extend(cmd.envs.iter().map(|(k, v)| {
-            format!("{}={}", k.to_string_lossy(), v.to_string_lossy()).into()
-        }));
+        args.extend(
+            cmd.envs
+                .iter()
+                .map(|(k, v)| format!("{}={}", k.to_string_lossy(), v.to_string_lossy()).into()),
+        );
         ResolvedCommand {
             program: "echo".into(),
             args,
