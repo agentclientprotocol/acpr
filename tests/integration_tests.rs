@@ -1,4 +1,7 @@
-use acpr::{Agent, BinaryDist, ForceOption, download_binary, fetch_registry, get_platform};
+use acpr::{
+    Acpr, Agent, BinaryDist, ForceOption, ResolvedCommand, download_binary, fetch_registry,
+    get_platform,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -232,7 +235,6 @@ async fn test_uvx_agent_basic() {
         return;
     }
 
-    use acpr::Acpr;
     use std::time::Duration;
     use tokio::io;
 
@@ -260,4 +262,68 @@ async fn test_uvx_agent_basic() {
             panic!("uvx agent test timed out - agent may not be starting properly");
         }
     }
+}
+
+#[tokio::test]
+async fn test_command_wrapper_transforms_command() {
+    use std::time::Duration;
+
+    // Skip if environment variable is set (for CI)
+    if std::env::var("ACPR_SKIP_AGENT").is_ok() {
+        return;
+    }
+
+    // Use a command wrapper that replaces the agent command with `echo`
+    let agent = Acpr::new("claude-acp").with_command_wrapper(|cmd: ResolvedCommand| {
+        let mut args = vec![format!("wrapped: {:?} {:?}", cmd.program, cmd.args).into()];
+        args.extend(cmd.envs.iter().map(|(k, v)| {
+            format!("{}={}", k.to_string_lossy(), v.to_string_lossy()).into()
+        }));
+        ResolvedCommand {
+            program: "echo".into(),
+            args,
+            envs: vec![],
+        }
+    });
+
+    let (_, stdout_write) = tokio::io::duplex(4096);
+
+    let result = tokio::time::timeout(Duration::from_secs(30), async {
+        agent
+            .run_with_streams(tokio::io::empty(), stdout_write)
+            .await
+    })
+    .await;
+
+    // The echo command should succeed - we just care that the wrapper was applied
+    match result {
+        Ok(Ok(())) => {} // wrapper worked, echo exited cleanly
+        Ok(Err(e)) => panic!("command wrapper test failed: {}", e),
+        Err(_) => panic!("command wrapper test timed out"),
+    }
+}
+
+#[tokio::test]
+async fn test_command_wrapper_sandbox_example() {
+    // This test just verifies the API compiles and the wrapper is stored correctly.
+    // It doesn't actually run bwrap since that requires specific system setup.
+    let agent = Acpr::new("claude-acp").with_command_wrapper(|cmd: ResolvedCommand| {
+        let mut args: Vec<std::ffi::OsString> = vec![
+            "--ro-bind".into(),
+            "/usr".into(),
+            "/usr".into(),
+            "--unshare-net".into(),
+            "--".into(),
+        ];
+        args.push(cmd.program);
+        args.extend(cmd.args);
+        ResolvedCommand {
+            program: "bwrap".into(),
+            args,
+            envs: cmd.envs,
+        }
+    });
+
+    // Just verify we can construct it without panicking
+    assert_eq!(agent.agent_name, "claude-acp");
 }
